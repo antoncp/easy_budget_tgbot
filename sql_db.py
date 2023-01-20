@@ -1,6 +1,11 @@
 import sqlite3
 
-BASE_CATEGORIES = ['Food', 'Rent&Home', 'Transport', 'Pleasure']
+BASE_CATEGORIES = ['🍜Food', '🏡Rent&Home', '🚌Transport', '👅Pleasure']
+TIME_PERIODS = {
+    "this": ("'start of month'", "this month"),
+    "30": ("'-30 days'", "last 30 days"),
+    "7": ("'-7 days'", "last 7 days"),
+}
 
 
 class DataBase:
@@ -45,7 +50,7 @@ class DataBase:
             SELECT category
             FROM categories
             WHERE client_id = ?
-            ORDER BY category
+            ORDER BY category;
             ''', (self.client_id,))
         return [cat[0] for cat in self.cursor]
 
@@ -80,6 +85,20 @@ class DataBase:
                       for date, category, amount in self.cursor]
         return answer
 
+    def read_spendings(self, period):
+        period = TIME_PERIODS[period][0]
+        with self.connection:
+            self.cursor.execute(f'''
+            SELECT strftime('%d.%m %H:%M', date), category, amount
+            FROM spendings
+            WHERE client_id = ?
+            AND date >= datetime('now', '1 hour', {period})
+            ORDER BY date;
+            ''', (self.client_id,))
+            answer = [f'*{date[:5]}*{date[5:]}*|* {category} `{amount:.2f}€`'
+                      for date, category, amount in self.cursor]
+        return answer
+
     def last_spend(self):
         with self.connection:
             self.cursor.execute('''
@@ -87,28 +106,30 @@ class DataBase:
             FROM spendings
             WHERE client_id = ?
             ORDER BY date DESC
-            LIMIT 1
+            LIMIT 1;
             ''', (self.client_id,))
         return [cat for cat in self.cursor][0]
 
-    def get_sum(self):
+    def get_sum(self, period):
+        period = TIME_PERIODS[period][0]
         with self.connection:
-            self.cursor.execute('''
+            self.cursor.execute(f'''
             SELECT SUM(amount)
             FROM spendings
             WHERE client_id = ? AND
-            date BETWEEN datetime('now', 'start of month')
+            date BETWEEN datetime('now', '1 hour', {period})
             AND datetime('now', '1 hour');
             ''', (self.client_id,))
         return round(self.cursor.fetchone()[0], 2)
 
-    def get_sum_categories(self):
+    def get_sum_categories(self, period):
+        period = TIME_PERIODS[period][0]
         with self.connection:
-            self.cursor.execute('''
+            self.cursor.execute(f'''
             SELECT category, SUM(amount) AS amounts
             FROM spendings
             WHERE client_id = ? AND
-            date > date('now', 'start of month')
+            date >= date('now', '1 hour', {period})
             GROUP BY category
             ORDER BY amounts DESC;
             ''', (self.client_id,))
@@ -127,10 +148,10 @@ class DataBase:
 
     def delete_spend(self, id):
         with self.connection:
-            self.cursor.execute(f'''
+            self.cursor.execute('''
             DELETE FROM spendings
-            WHERE id = {id};
-            ''')
+            WHERE id = ?;
+            ''', (id,))
         return True
 
     def check_user_exist(self, table='categories'):

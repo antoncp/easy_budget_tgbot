@@ -3,7 +3,7 @@ import telebot
 from telebot.types import (BotCommand, InlineKeyboardMarkup,
                            InlineKeyboardButton, ForceReply)
 from dotenv import load_dotenv
-from sql_db import DataBase
+from sql_db import DataBase, TIME_PERIODS
 
 load_dotenv()
 TEL_TOKEN = os.environ.get('TEL_TOKEN')
@@ -25,7 +25,20 @@ def start(message):
     if not db.check_user_exist():
         db.categories_db_initialization()
     db.close()
-    bot.send_message(message.from_user.id, 'Spending bot start')
+    bot.send_message(
+        message.from_user.id,
+        'Welcome to a spending bot. Here you easily can record your daily '
+        'spending in a custom categories and track your personal finance. We '
+        'already added 4 basic categories. Check it out and adjust categories '
+        'list as you want (you could delete old and add new categories).\n\n'
+        '*Set up categories* here /categories\n'
+        '*Add new spend* here /new\n'
+        '*Delete wrong entry* here /delete\n'
+        '*Display your spending records* and total amounts of spending for '
+        'different periods here /overview\n\n'
+        'At any moment you have quick access to these operations via ↙ Menu '
+        'button in the left bottom corner of your screen.',
+        parse_mode='Markdown')
 
 
 @bot.message_handler(commands=['new'])
@@ -39,26 +52,37 @@ def new_spend(message):
     db.close()
     bot.send_message(
         message.chat.id,
-        'Choose category to add new spend',
+        'Choose category to add a new spend',
         reply_markup=category_select
         )
 
 
 @bot.message_handler(commands=['overview'])
 def overview(message):
-    duration_select = InlineKeyboardMarkup()
-    duration_select.add(InlineKeyboardButton(
-                        text='Get overview from the start of this month',
-                        callback_data='overview month'))
-    duration_select.add(InlineKeyboardButton(
-                        text='Get overview for the 30 last days',
-                        callback_data='overview 30'))
-    bot.send_message(
-        message.chat.id,
-        'Select the period for which you want to get an overview '
-        'of your spending',
-        reply_markup=duration_select
-        )
+    db = DataBase(message.chat.id)
+    if db.check_user_exist(table='spendings'):
+        duration_select = InlineKeyboardMarkup()
+        duration_select.add(InlineKeyboardButton(
+                            text='Get overview from the start of this month',
+                            callback_data='overview this'))
+        duration_select.add(InlineKeyboardButton(
+                            text='Get overview for the 7 last days',
+                            callback_data='overview 7'))
+        duration_select.add(InlineKeyboardButton(
+                            text='Get overview for the 30 last days',
+                            callback_data='overview 30'))
+        bot.send_message(
+            message.chat.id,
+            'Select the period for which you want to get an overview '
+            'of your spending',
+            reply_markup=duration_select
+            )
+    else:
+        bot.send_message(
+            message.chat.id,
+            "You haven't got any spending entries yet. "
+            "Try to make a new one /new")
+    db.close()
 
 
 @bot.message_handler(commands=['delete'])
@@ -72,7 +96,7 @@ def erase_spend(message):
                             callback_data=f'erase {id}'))
         bot.send_message(
             message.chat.id,
-            f'Your last spend was:\n{time}\n{cat} | `{amount}€`',
+            f'_Your last spend was_:\n{time} | {cat} | `{amount}€`',
             reply_markup=category_manage,
             parse_mode='Markdown'
             )
@@ -122,29 +146,35 @@ def provide_amount(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('overview'))
 def overview_from_db(call):
-    db = DataBase(call.message.chat.id)
-    period = call.data.split()[-1]
-    if period.isdigit():
-        bot.send_message(
-            call.message.chat.id,
-            'Sorry, this function is not ready yet.')
-    else:
-        table = '\n'.join(db.read_spendings_month())
-        header = ('_Your spendings in this month                 _\n'
+    try:
+        db = DataBase(call.message.chat.id)
+        period = call.data.split()[-1]
+        table = '\n'.join(db.read_spendings(period))
+        header = (f'_Your spendings in {TIME_PERIODS[period][1]}           _\n'
                   '*Date&Time* *|*   *Category&Amount*\n'
                   '-----------------------------------------------------\n')
-        answer = header + table
-        total = (f'Total spending in this month: *{db.get_sum()}€*\n'
+        total = (f'Total spending in {TIME_PERIODS[period][1]}: '
+                 f'*{db.get_sum(period)}€*\n'
                  '-----------------------------------------------------\n')
-        owerview = '\n'.join(db.get_sum_categories())
+        owerview = '\n'.join(db.get_sum_categories(period))
+        answer = header + table
         second_answer = total + owerview
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, answer, parse_mode='Markdown')
+        bot.send_message(
+            call.message.chat.id,
+            answer,
+            parse_mode='Markdown')
         bot.send_message(
             call.message.chat.id,
             second_answer,
             parse_mode='Markdown')
-    db.close()
+        db.close()
+    except TypeError:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(
+            call.message.chat.id,
+            "You haven't got any spending entries yet. "
+            "Try to make a new one /new")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('erase'))
@@ -161,7 +191,10 @@ def delete_from_db(call):
 def new_category(call):
     message = ('Give a name to a new category in your personal list. '
                'It should be one word. All categories consisting two and more '
-               'separate words will be croped to a first one.')
+               'separate words will be croped to a first one. You could '
+               'illustrate your category with any emoji from keyboard if you '
+               'wish, but do not use space between it. '
+               'Example: 😉*MyCategory*.')
     reply = ForceReply(input_field_placeholder='Write name here')
     bot.send_message(call.message.chat.id, message, reply_markup=reply)
     bot.answer_callback_query(callback_query_id=call.id)
@@ -200,10 +233,22 @@ def handle_text(message):
 # Individual functions
 def spend_to_db(message, category):
     db = DataBase(message.chat.id)
-    amount = message.text
-    if db.new_spending(category, amount.replace(',', '.')):
+    amount = message.text.replace(',', '.')
+    try:
+        amount = int(amount)
+    except ValueError:
+        try:
+            amount = float(amount)
+        except ValueError:
+            bot.send_message(
+                message.chat.id,
+                'This is not a number. No record has been made. Examples of '
+                'a correct amount: 5 or 0.5 or 25.65 or 44,80.')
+            db.close()
+            return
+    if db.new_spending(category, amount):
         total = ('Your total spendings since the start of this '
-                 f'month: *{db.get_sum()}€*')
+                 f'month: *{db.get_sum("this")}€*')
         bot.send_message(
             message.chat.id,
             f'A spending entry in the *{category}* category for '
