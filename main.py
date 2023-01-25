@@ -5,6 +5,7 @@ from telebot.types import (BotCommand, InlineKeyboardMarkup,
 from dotenv import load_dotenv
 from sql_db import DataBase, TIME_PERIODS
 
+
 load_dotenv()
 TEL_TOKEN = os.environ.get('TEL_TOKEN')
 bot = telebot.TeleBot(TEL_TOKEN)
@@ -71,6 +72,9 @@ def overview(message):
         duration_select.add(InlineKeyboardButton(
                             text='Get overview for the 30 last days',
                             callback_data='overview 30'))
+        duration_select.add(InlineKeyboardButton(
+                            text='Get overview for the previous month',
+                            callback_data='overview previous'))
         bot.send_message(
             message.chat.id,
             'Select the period for which you want to get an overview '
@@ -196,7 +200,11 @@ def new_category(call):
                'wish, but do not use space between it. '
                'Example: 😉*MyCategory*.')
     reply = ForceReply(input_field_placeholder='Write name here')
-    bot.send_message(call.message.chat.id, message, reply_markup=reply)
+    bot.send_message(
+        call.message.chat.id,
+        message,
+        parse_mode='Markdown',
+        reply_markup=reply)
     bot.answer_callback_query(callback_query_id=call.id)
 
 

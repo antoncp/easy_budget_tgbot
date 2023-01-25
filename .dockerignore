@@ -1,1 +1,4 @@
 .env
+db/spendings.sqlite
+*.sqlite3
+*.sqlite

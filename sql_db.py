@@ -5,6 +5,8 @@ TIME_PERIODS = {
     "this": ("'start of month'", "this month"),
     "30": ("'-30 days'", "last 30 days"),
     "7": ("'-7 days'", "last 7 days"),
+    "previous": ("'start of month', '-1 month'",
+                 "previous month", "'1 hour', 'start of month'")
 }
 
 
@@ -71,28 +73,18 @@ class DataBase:
             ''', (self.client_id, category))
         return True
 
-    def read_spendings_month(self):
-        with self.connection:
-            self.cursor.execute('''
-            SELECT strftime('%d.%m %H:%M', date), category, amount
-            FROM spendings
-            WHERE client_id = ?
-            AND date BETWEEN datetime('now', 'start of month')
-            AND datetime('now', '1 hour')
-            ORDER BY date;
-            ''', (self.client_id,))
-            answer = [f'*{date[:5]}*{date[5:]}*|* {category} `{amount:.2f}€`'
-                      for date, category, amount in self.cursor]
-        return answer
-
     def read_spendings(self, period):
-        period = TIME_PERIODS[period][0]
+        start = TIME_PERIODS[period][0]
+        end = "'1 hour'"
+        if len(TIME_PERIODS[period]) > 2:
+            end = TIME_PERIODS[period][2]
         with self.connection:
             self.cursor.execute(f'''
             SELECT strftime('%d.%m %H:%M', date), category, amount
             FROM spendings
             WHERE client_id = ?
-            AND date >= datetime('now', '1 hour', {period})
+            AND date BETWEEN datetime('now', '1 hour', {start})
+            AND datetime('now', {end})
             ORDER BY date;
             ''', (self.client_id,))
             answer = [f'*{date[:5]}*{date[5:]}*|* {category} `{amount:.2f}€`'
@@ -111,25 +103,32 @@ class DataBase:
         return [cat for cat in self.cursor][0]
 
     def get_sum(self, period):
-        period = TIME_PERIODS[period][0]
+        start = TIME_PERIODS[period][0]
+        end = "'1 hour'"
+        if len(TIME_PERIODS[period]) > 2:
+            end = TIME_PERIODS[period][2]
         with self.connection:
             self.cursor.execute(f'''
             SELECT SUM(amount)
             FROM spendings
             WHERE client_id = ? AND
-            date BETWEEN datetime('now', '1 hour', {period})
-            AND datetime('now', '1 hour');
+            date BETWEEN datetime('now', '1 hour', {start})
+            AND datetime('now', {end});
             ''', (self.client_id,))
         return round(self.cursor.fetchone()[0], 2)
 
     def get_sum_categories(self, period):
-        period = TIME_PERIODS[period][0]
+        start = TIME_PERIODS[period][0]
+        end = "'1 hour'"
+        if len(TIME_PERIODS[period]) > 2:
+            end = TIME_PERIODS[period][2]
         with self.connection:
             self.cursor.execute(f'''
             SELECT category, SUM(amount) AS amounts
             FROM spendings
             WHERE client_id = ? AND
-            date >= date('now', '1 hour', {period})
+            date BETWEEN datetime('now', '1 hour', {start})
+            AND datetime('now', {end})
             GROUP BY category
             ORDER BY amounts DESC;
             ''', (self.client_id,))
