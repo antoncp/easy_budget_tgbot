@@ -27,7 +27,7 @@ python3.9 -m venv venv
 ```
 pip install -r requirements.txt
 ```
-- Execute a command to run the bot in a polling mode 
+- Execute python command to run the bot in a polling mode 
 ```
 python main.py
 ``` 
