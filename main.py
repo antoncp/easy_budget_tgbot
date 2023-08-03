@@ -1,10 +1,11 @@
 import os
-import telebot
-from telebot.types import (BotCommand, InlineKeyboardMarkup,
-                           InlineKeyboardButton, ForceReply)
-from dotenv import load_dotenv
-from sql_db import DataBase, TIME_PERIODS
 
+import telebot
+from dotenv import load_dotenv
+from telebot.types import (BotCommand, ForceReply, InlineKeyboardButton,
+                           InlineKeyboardMarkup)
+
+from sql_db import TIME_PERIODS, DataBase
 
 load_dotenv()
 TEL_TOKEN = os.environ.get('TEL_TOKEN')
@@ -139,7 +140,7 @@ def category_setting(message):
         )
 
 
-# Set up actions on inline-buttons commands
+# Set up actions on inline-buttons commands 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('spend'))
 def provide_amount(call):
     message = f'New spend at: {call.data.split()[-1]}'
